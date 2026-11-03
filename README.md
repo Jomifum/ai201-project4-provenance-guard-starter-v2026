@@ -169,7 +169,7 @@ is currently marked formal.
 
 - **Criterion 1 — false positives:** not yet a valid human-writing test. Its
   data requirement (at least three formal human texts) is not met, and the
-  current human group was co-written by me and the assistant. The current run
+  current human group was co-written by me and the AI assistant. The current run
   labels 0/5 of those co-written examples `ai`, but that does not establish
   the false-positive rate on writing produced by me alone.
 - **Criterion 2 — score spread:** **FAIL**. The measured AI-human mean gap
@@ -283,7 +283,7 @@ curl.exe -sS -X POST http://127.0.0.1:5000/appeal -H "Content-Type: application/
 - **What I changed or decided:** I questioned whether that showed a real
   difference, because the test texts came from the assistant. I did not accept
   the suggestions unchanged; I edited them for technical sense and my own
-  voice. I co-wrote all five current human-group texts with the assistant.
+  voice. I co-wrote all five current human-group texts with the AI assistant.
   The latest measured gap is `0.2104`; it is not a result on texts written by
   me alone.
 
