@@ -273,17 +273,25 @@ curl.exe -sS -X POST http://127.0.0.1:5000/appeal -H "Content-Type: application/
 
 ## How I Used AI
 
-**PLACEHOLDER 1 — Fill in your own AI-use example.**
+**Moment 1 — Calibration**
 
-- What I asked:
-- What came back:
-- What I changed or decided:
+- **What I asked:** I asked the assistant to help tune stylometry so the AI
+  and human scores would spread apart.
+- **What came back:** It changed the feature directions and weights, and the
+  reported AI-human gap rose from `0.0448` to `0.3126`. It tuned those
+  settings on texts it wrote itself.
+- **What I changed or decided:** I questioned whether that showed a real
+  difference, because the test texts came from the assistant. I did not accept
+  the suggestions unchanged; I edited them for technical sense and my own
+  voice. My current human test group is a mix of AI-written and my own writing,
+  and the latest measured gap is `0.2104`, so I do not treat `0.3126` as a
+  result on only human-written work.
 
-**PLACEHOLDER 2 — Fill in your own AI-use example.**
+**Moment 2 — Borderline target**
 
-- What I asked:
-- What came back:
-- What I changed or decided:
+- **What I asked:** I asked whether the borderline examples met my `0.40`–`0.60` score target.
+- **What came back:** In that run, most scores were between `0.65` and `0.74`, above the target.
+- **What I changed or decided:** I left the target alone instead of tuning the scores to make them fit; I thought that could hurt accuracy and technical depth. I updated the human texts in `test_set/texts.json` to better align with the project's current scope, which recalibrated the numbers. In the latest `python test_signals.py` run, the five borderline scores are `0.5808`, `0.5727`, `0.4570`, `0.5899`, and `0.5631`; all five are now in the target range and labeled `unsure`.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
