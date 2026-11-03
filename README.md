@@ -163,15 +163,15 @@ to `0.5` than the weighted average.
 the project's 15-text corpus. In the latest `python test_signals.py` run,
 the AI-group mean was `0.6776` and the human-group mean was `0.4672`, a gap
 of `0.2104`. These are corpus calibration results, not independent evidence
-of real-world accuracy. All five texts in the `human` group were written by
-an AI assistant as synthetic examples until I replace them with my own
-writing; only `human_05_formal` is currently marked formal.
+of real-world accuracy. I co-wrote all five texts in the `human` group with
+the AI assistant; none is solely my unaided writing. Only `human_05_formal`
+is currently marked formal.
 
 - **Criterion 1 — false positives:** not yet a valid human-writing test. Its
   data requirement (at least three formal human texts) is not met, and the
-  current human group is AI-authored. The current run labels 0/5 of those
-  synthetic examples `ai`, but that does not establish the false-positive
-  rate on real human writing.
+  current human group was co-written by me and the assistant. The current run
+  labels 0/5 of those co-written examples `ai`, but that does not establish
+  the false-positive rate on writing produced by me alone.
 - **Criterion 2 — score spread:** **FAIL**. The measured AI-human mean gap
   `0.2104` is below the required `0.30`; the minimum clearly-AI score is
   `0.6220`, so that part of its target passes.
@@ -278,20 +278,20 @@ curl.exe -sS -X POST http://127.0.0.1:5000/appeal -H "Content-Type: application/
 - **What I asked:** I asked the assistant to help tune stylometry so the AI
   and human scores would spread apart.
 - **What came back:** It changed the feature directions and weights, and the
-  reported AI-human gap rose from `0.0448` to `0.3126`. It tuned those
-  settings on texts it wrote itself.
+  reported AI-human gap moved from `0.0448` to `0.3126` across earlier
+  calibration versions. It tuned those versions on texts it wrote itself.
 - **What I changed or decided:** I questioned whether that showed a real
   difference, because the test texts came from the assistant. I did not accept
   the suggestions unchanged; I edited them for technical sense and my own
-  voice. My current human test group is a mix of AI-written and my own writing,
-  and the latest measured gap is `0.2104`, so I do not treat `0.3126` as a
-  result on only human-written work.
+  voice. I co-wrote all five current human-group texts with the assistant.
+  The latest measured gap is `0.2104`; it is not a result on texts written by
+  me alone.
 
 **Moment 2 — Borderline target**
 
 - **What I asked:** I asked whether the borderline examples met my `0.40`–`0.60` score target.
-- **What came back:** In that run, most scores were between `0.65` and `0.74`, above the target.
-- **What I changed or decided:** I left the target alone instead of tuning the scores to make them fit; I thought that could hurt accuracy and technical depth. I updated the human texts in `test_set/texts.json` to better align with the project's current scope, which recalibrated the numbers. In the latest `python test_signals.py` run, the five borderline scores are `0.5808`, `0.5727`, `0.4570`, `0.5899`, and `0.5631`; all five are now in the target range and labeled `unsure`.
+- **What came back:** In an earlier calibration version, most borderline scores were between `0.65` and `0.74`, above the target.
+- **What I changed or decided:** I left the target alone instead of tuning the scores to make them fit; I thought that could hurt accuracy and technical depth. I updated the human texts in `test_set/texts.json` and co-wrote all five with the assistant, which recalibrated the numbers. In the latest `python test_signals.py` run, the AI-human gap is `0.2104`, and the five borderline scores are `0.5808`, `0.5727`, `0.4570`, `0.5899`, and `0.5631`; all five are now in the target range and labeled `unsure`.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
@@ -416,6 +416,21 @@ that produced it:
      Say which way you'd go and WHO PAYS FOR IT. -->
 
 ---
+
+## Stretch Features Declared
+
+Before implementing these stretch features, I plan to:
+
+1. **Add a third signal.** I will combine the model signal at weight `0.20`,
+   the style signal at weight `0.60`, and the new signal at weight `0.20` using
+   a weighted average whose weights sum to `1.00`.
+2. **Add `GET /content/<id>`.** It will look up the item's audit history and
+   return its current status, including `under_review` after an appeal.
+3. **Add a verified-human path.** A writer will complete an extra verification
+   step to earn a credential, which the service will show on that writer's work.
+
+This declaration was first committed in `29f5f22`, before the stretch code in
+`76301c4`.
 
 ## Stretch Notes
 
