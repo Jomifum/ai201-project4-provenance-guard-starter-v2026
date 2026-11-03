@@ -8,8 +8,7 @@ The reason is next unit: you run an attack against this service, and **an
 attack you can't see in a log is an attack you can't diagnose.** An input that
 slipped past your detector leaves no other trace.
 
-All nine fields the unit 8 rubric requires are in the entry shape from the
-start, even though unit 7 only fills some of them. That's deliberate — adding
+All decision fields are in the entry shape, including both signal scores. That's deliberate — adding
 fields later means your early entries and your late ones have different shapes,
 and the one you most want to compare is the one from before the change.
 
@@ -46,8 +45,7 @@ def log_decision(
     """
     Write one decision to the audit log.
 
-    The nine required fields, all present from unit 7 whether or not you can
-    fill them yet:
+    The decision fields:
 
         timestamp, content_id, creator_id, guess,
         model_score, style_score, combined_score, label, status
