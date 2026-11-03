@@ -293,6 +293,19 @@ that produced it:
 
 
 
+## Stretch Features Declared
+
+Before implementing these stretch features, I plan to:
+
+1. **Add a third signal.** I will combine the model signal at weight `0.20`,
+   the style signal at weight `0.60`, and the new signal at weight `0.20` using
+   a weighted average whose weights sum to `1.00`.
+2. **Add `GET /content/<id>`.** It will look up the item's audit history and
+   return its current status, including `under_review` after an appeal.
+3. **Add a verified-human path.** A writer will complete an extra verification
+   step to earn a credential, which the service will show on that writer's work.
+
+
 <!-- ═════════════════════════════════════════════════════════════════════
 
      SUBMISSION CHECKLIST — unit 7
