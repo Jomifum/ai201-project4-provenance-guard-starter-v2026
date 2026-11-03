@@ -50,11 +50,13 @@ DETECTOR_MAX_TOKENS = 400
 # ─── Scoring (Milestone 4) ───────────────────────────────────────────────────
 # How much each signal counts toward the combined score.
 #
-# Weights for model predictability and text stylometry.
-# Their weighted average is pulled toward 0.5 when they disagree.
+# Weights for model predictability, text stylometry, and repeated trigrams.
+# Their weighted average is pulled toward 0.5 when the signals disagree.
 
 WEIGHT_MODEL_SIGNAL = 0.20
-WEIGHT_STYLE_SIGNAL = 0.80
+WEIGHT_STYLE_SIGNAL = 0.60
+WEIGHT_REPETITION_SIGNAL = 0.20
+REPETITION_RATE_FOR_MAX = 0.05
 
 
 # ─── Thresholds (Milestone 5) ────────────────────────────────────────────────
@@ -85,9 +87,13 @@ AI_LABEL = (
     "is not proof of authorship. If this is your original work, you can appeal "
     "by sending its content ID and a brief explanation to POST /appeal."
 )
+VERIFICATION_PROMPT = (
+    "Describe a small task you completed recently. Include what you expected, "
+    "one specific detail that changed, and how you responded."
+)
 
 # The configured bands are available across the full combined-score range.
-# The label bands cover all combined scores from 0.0 through 1.0.
+# Whether real submissions reach each band depends on the two signal outputs.
 
 
 # ─── Rate limiting (UNIT 8) ──────────────────────────────────────────────────
@@ -112,4 +118,5 @@ RATE_LIMIT_STORAGE = "memory://"
 
 LOG_DIR = ROOT / "logs"
 AUDIT_LOG = LOG_DIR / "audit.jsonl"
+VERIFIED_CREATORS_FILE = LOG_DIR / "verified_creators.json"
 RESULTS_DIR = ROOT / "results"

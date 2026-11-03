@@ -8,7 +8,8 @@ The reason is next unit: you run an attack against this service, and **an
 attack you can't see in a log is an attack you can't diagnose.** An input that
 slipped past your detector leaves no other trace.
 
-All decision fields are in the entry shape, including both signal scores. That's deliberate — adding
+All decision fields are in the entry shape, including all three signal scores
+and the verification flag. That's deliberate — adding
 fields later means your early entries and your late ones have different shapes,
 and the one you most want to compare is the one from before the change.
 
@@ -37,9 +38,11 @@ def log_decision(
     guess: str | None = None,
     model_score: float | None = None,
     style_score: float | None = None,
+    repetition_score: float | None = None,
     combined_score: float | None = None,
     label: str | None = None,
     status: str = "decided",
+    verified_human: bool = False,
     **extra,
 ) -> dict:
     """
@@ -48,7 +51,8 @@ def log_decision(
     The decision fields:
 
         timestamp, content_id, creator_id, guess,
-        model_score, style_score, combined_score, label, status
+        model_score, style_score, repetition_score, combined_score, label,
+        status, verified_human
 
     `status` moves over an item's life: `decided` when first judged,
     `under_review` once the writer appeals.
@@ -63,9 +67,11 @@ def log_decision(
         "guess": guess,
         "model_score": model_score,
         "style_score": style_score,
+        "repetition_score": repetition_score,
         "combined_score": combined_score,
         "label": label,
         "status": status,
+        "verified_human": verified_human,
     }
     entry.update(extra)
     return _append(entry)

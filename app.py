@@ -20,6 +20,8 @@ Routes:
     POST /ping        the worked example. Already works. Don't edit it
     POST /submit      score submitted text
     POST /appeal      record an appeal
+    GET  /content/<id> read one decision and its current status
+    POST /verify      complete a prompted-writing credential step
     GET  /log         the audit log. Already works
     GET  /health      is the service up, and is the model loaded
 """
@@ -154,7 +156,7 @@ def health():
 # @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
 def submit():
     """
-    Score a text with both signals, log the decision, and return the result.
+    Score a text with all signals, log the decision, and return the result.
 
     Expects JSON:
         {"text": "...", "creator_id": "..."}
@@ -164,8 +166,10 @@ def submit():
     JSON errors rather than an unhandled exception.
     """
     import detector
+    import repetition
     import scoring
     import stylometry
+    import verification
 
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
@@ -206,18 +210,24 @@ def submit():
         }), 503
 
     style_score = stylometry.style_signal(text)
-    combined_score = scoring.combine_signals(model_score, style_score)
+    repetition_score = repetition.repetition_signal(text)
+    combined_score = scoring.combine_signals(
+        model_score, style_score, repetition_score
+    )
     guess, label = scoring.score_to_label(combined_score)
     content_id = str(uuid.uuid4())
+    verified_human = verification.is_verified(creator_id.strip())
     audit.log_decision(
         content_id=content_id,
         creator_id=creator_id.strip(),
         guess=guess,
         model_score=model_score,
         style_score=style_score,
+        repetition_score=repetition_score,
         combined_score=combined_score,
         label=label,
         status="decided",
+        verified_human=verified_human,
     )
 
     return jsonify({
@@ -225,9 +235,11 @@ def submit():
         "guess": guess,
         "model_score": model_score,
         "style_score": style_score,
+        "repetition_score": repetition_score,
         "combined_score": combined_score,
         "confidence": combined_score,
         "label": label,
+        "verified_human": verified_human,
     })
 
 
@@ -277,6 +289,101 @@ def appeal():
         "content_id": content_id,
         "status": "under_review",
         "message": "Your appeal has been recorded for review.",
+    })
+
+
+@app.get("/content/<content_id>")
+def get_content(content_id: str):
+    """Return one logged decision with the latest appeal status."""
+    entries = audit.entries_for(content_id)
+    decisions = [
+        entry for entry in entries
+        if entry.get("event") != "appeal"
+        and entry.get("status") == "decided"
+        and isinstance(entry.get("creator_id"), str)
+    ]
+    if not decisions:
+        return jsonify({
+            "error": "not_found",
+            "message": "No submission exists for that content_id.",
+        }), 404
+
+    decision = decisions[0]
+    status = (
+        "under_review"
+        if any(entry.get("event") == "appeal" for entry in entries)
+        else decision["status"]
+    )
+    return jsonify({
+        "content_id": content_id,
+        "creator_id": decision["creator_id"],
+        "guess": decision.get("guess"),
+        "label": decision.get("label"),
+        "combined_score": decision.get("combined_score"),
+        "status": status,
+        "verified_human": bool(decision.get("verified_human", False)),
+    })
+
+
+@app.post("/verify")
+def verify_creator():
+    """
+    Grant a prompted-writing completion credential after a 100-word sample.
+
+    This checks completion of the prompt, not identity or human authorship.
+    """
+    import stylometry
+    import verification
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({
+            "error": "invalid_request",
+            "message": "Request body must be a JSON object.",
+            "prompt": config.VERIFICATION_PROMPT,
+        }), 400
+
+    creator_id = payload.get("creator_id")
+    writing_sample = payload.get("writing_sample")
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        return jsonify({
+            "error": "invalid_request",
+            "message": "'creator_id' must be a non-empty string.",
+            "prompt": config.VERIFICATION_PROMPT,
+        }), 400
+    if not isinstance(writing_sample, str) or not writing_sample.strip():
+        return jsonify({
+            "error": "invalid_request",
+            "message": "'writing_sample' must be a non-empty string.",
+            "prompt": config.VERIFICATION_PROMPT,
+        }), 400
+    if len(writing_sample) > 10_000:
+        return jsonify({
+            "error": "invalid_request",
+            "message": "'writing_sample' must not exceed 10,000 characters.",
+            "prompt": config.VERIFICATION_PROMPT,
+        }), 400
+
+    word_count = len(stylometry.words(writing_sample))
+    if word_count < 100:
+        return jsonify({
+            "error": "invalid_request",
+            "message": "The prompted writing sample must contain at least 100 words.",
+            "word_count": word_count,
+            "prompt": config.VERIFICATION_PROMPT,
+        }), 400
+
+    verified_at = verification.add_verified_creator(creator_id.strip())
+    return jsonify({
+        "creator_id": creator_id.strip(),
+        "verified_human": True,
+        "credential": "prompted_sample_completed",
+        "verified_at": verified_at,
+        "word_count": word_count,
+        "message": (
+            "The prompted writing sample was received. This credential confirms "
+            "completion only; it does not verify identity or authorship."
+        ),
     })
 
 

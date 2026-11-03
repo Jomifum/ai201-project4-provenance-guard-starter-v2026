@@ -1,6 +1,6 @@
 """
 Turning two numbers into one, and one number into something a person can read.
-`combine_signals` combines the two likelihood scores, while `score_to_label`
+`combine_signals` combines the three likelihood scores, while `score_to_label`
 maps the result to a reader-facing label.
 
 ⚠️ Your README's **Signals and Scoring** section has to name the file and
@@ -12,17 +12,43 @@ import config
 
 
 # Combining rule: take the configured weighted average, then pull it toward 0.5
-# in proportion to the absolute difference between the two signals.
-def combine_signals(model_score: float, style_score: float) -> float:
-    """Combine the two 0-1 likelihood scores, pulling disagreement toward 0.5."""
-    weight_total = config.WEIGHT_MODEL_SIGNAL + config.WEIGHT_STYLE_SIGNAL
+# in proportion to the mean pairwise disagreement among the signals.
+def combine_signals(
+    model_score: float,
+    style_score: float,
+    repetition_score: float,
+) -> float:
+    """
+    Combine three 0–1 signals into one 0–1 score.
+
+    Both inputs point the same way: higher means more likely AI.
+
+    Args:
+        model_score: from `detector.model_signal` — how predictable the text is.
+        style_score: from `stylometry.style_signal` — the shape of the text.
+        repetition_score: from `repetition.repetition_signal` — repeated phrases.
+
+    Returns a 0–1 score. The configured weighted average is pulled toward 0.5
+    in proportion to mean absolute pairwise disagreement.
+    """
+    weight_total = (
+        config.WEIGHT_MODEL_SIGNAL
+        + config.WEIGHT_STYLE_SIGNAL
+        + config.WEIGHT_REPETITION_SIGNAL
+    )
     weighted_average = (
         config.WEIGHT_MODEL_SIGNAL * model_score
         + config.WEIGHT_STYLE_SIGNAL * style_score
+        + config.WEIGHT_REPETITION_SIGNAL * repetition_score
     ) / weight_total
-    disagreement = abs(model_score - style_score)
+    disagreement = (
+        abs(model_score - style_score)
+        + abs(model_score - repetition_score)
+        + abs(style_score - repetition_score)
+    ) / 3
     combined = 0.5 + (weighted_average - 0.5) * (1.0 - 0.5 * disagreement)
     return round(min(max(combined, 0.0), 1.0), 4)
+
 
 def score_to_label(score: float) -> tuple[str, str]:
     """
