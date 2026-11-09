@@ -489,6 +489,16 @@ that produced it:
 
 ```json
 
+{"timestamp": "2026-11-09T05:22:30+00:00", "content_id": "4c6d8008-4e40-46ce-976e-dd04341f6e6b", "creator_id": "attacker_EV09", "guess": "unsure", "model_score": 0.7042, "style_score": 0.2564, "repetition_score": 0.0, "combined_score": 0.3502, "label": "We can't tell who wrote this text. This result is uncertain, and we are not accusing you of using AI.", "status": "decided", "verified_human": false}
+{"timestamp": "2026-11-09T05:22:30+00:00", "content_id": "7edd934e-bc89-4151-9eb8-648a47d0766a", "creator_id": "attacker_FP01", "guess": "unsure", "model_score": 0.6175, "style_score": 0.2637, "repetition_score": 0.1961, "combined_score": 0.3584, "label": "We can't tell who wrote this text. This result is uncertain, and we are not accusing you of using AI.", "status": "decided", "verified_human": false}
+{"timestamp": "2026-11-09T05:22:32+00:00", "content_id": "91780e05-88a7-4296-ba71-4c8ea68a73d1", "creator_id": "attacker_PI06", "guess": "unsure", "model_score": 0.5583, "style_score": 0.2906, "repetition_score": 0.1786, "combined_score": 0.3511, "label": "We can't tell who wrote this text. This result is uncertain, and we are not accusing you of using AI.", "status": "decided", "verified_human": false}
+{"timestamp": "2026-11-09T05:22:30+00:00", "content_id": "07fc5a3e-6286-4251-94a8-7e1b4382e064", "creator_id": "attacker_FP02", "guess": "ai", "model_score": 0.7387, "style_score": 0.7513, "repetition_score": 0.8, "combined_score": 0.755, "label": "This text has features often associated with AI-written text, but this is not proof of authorship. If this is your original work, you can appeal by sending its content ID and a brief explanation to POST /appeal.", "status": "decided", "verified_human": false}
+{"timestamp": "2026-11-09T05:22:29+00:00", "content_id": "574a7d52-1a86-42d8-b870-d2d1cda12d1c", "creator_id": "attacker_EV02", "guess": "human", "model_score": 0.5943, "style_score": 0.0637, "repetition_score": 0.0, "combined_score": 0.2437, "label": "Your writing looks like it was written by a person. Thanks for sharing it.", "status": "decided", "verified_human": false}
+{"timestamp": "2026-11-09T05:22:29+00:00", "content_id": "6ba86a51-9768-4f2d-bcc1-039b3e935350", "creator_id": "attacker_EV05", "guess": "human", "model_score": 0.3212, "style_score": 0.0552, "repetition_score": 0.0, "combined_score": 0.1499, "label": "Your writing looks like it was written by a person. Thanks for sharing it.", "status": "decided", "verified_human": false}
+{"timestamp": "2026-11-09T05:22:32+00:00", "creator_id": "attacker_MF01", "event": "rejected", "status": "rejected", "reason": "missing_or_empty_text"}
+{"timestamp": "2026-11-09T05:22:32+00:00", "creator_id": "attacker_MF02", "event": "rejected", "status": "rejected", "reason": "invalid_text"}
+{"timestamp": "2026-11-09T05:22:33+00:00", "creator_id": "attacker_RQ01", "event": "rejected", "status": "rejected", "reason": "missing_or_empty_text"}
+{"timestamp": "2026-11-09T05:22:34+00:00", "creator_id": "attacker_flood", "event": "rejected", "status": "rejected", "reason": "rate_limited", "limit": "5 per 1 minute"}
 ```
 
 **Diagnoses**
@@ -507,7 +517,7 @@ that produced it:
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
-
+Pattern: EV02, EV05 and EV09 share a low style score and a repetition score of 0.0. FP02 is different: all three signals were high (0.7387, 0.7513 and 0.8), so it follows the 0.75 threshold and is not caused by a low style score. For EV09 the raw weighted average was about 0.2947 (0.7042 x 0.20 + 0.2564 x 0.60 + 0.0 x 0.20), and the disagreement adjustment moved it toward 0.5 to 0.3429, still under 0.35. The audit shows scores but not which text features produced them, so these are explanations consistent with the scores, not proof.
 
 ---
 
@@ -515,13 +525,91 @@ that produced it:
 
 **What I changed:**
 
+I changed `WEIGHT_STYLE_SIGNAL` from 0.60 to 0.40 in `config.py` (commit e25bfd3). The model weight (0.20), the repetition weight (0.20), the thresholds (0.35 and 0.75), the labels and `criteria.md` were not touched.
+
+`combine_signals` normalizes these weights by dividing by their sum, giving effective weights 0.25, 0.50, and 0.25 after the change. The code line is `) / weight_total`.
+
 **Which diagnosis pointed at it:**
+
+My diagnoses of EV02, EV05 and EV09 (in Run Log and Verdicts) named the style signal and the combining rule: style scores of 0.0637, 0.0552 and 0.2564 were weighted at 0.60 and pulled the combined scores under the 0.35 human threshold. FP02 pointed somewhere else: all three signals were high, so the 0.75 threshold decided it, and a weight change would not be expected to fix it.
+
+**Why:**
+
+The diagnosis pointed at the style signal. EV02, EV05 and EV09 all had low style scores (0.0637, 0.0552 and 0.2564) and a repetition score of 0.0, and style carried the largest weight, so it pulled their combined scores below the 0.35 human threshold. I expected a lower style weight to let the model score count for more. The cost is that style also separated the two groups in my fixtures, so I expected the gap to shrink.
 
 ### Attack Run — After
 
 <!-- Same format. `run_attacks.py --label after` -->
 
 
+| ID | Family | Target | Before (score / model / style / label / HTTP / mark) | After (score / model / style / label / HTTP / mark) |
+|---|---|---|---|---|
+| EV01 | evasion | signal two: typos raise word variety | 0.5718 / 0.1635 / 0.9543 / unsure / 200 / HELD | 0.5123 / 0.1635 / 0.9543 / unsure / 200 / HELD |
+| EV02 | evasion | signal two: broken-up sentences raise length spread | 0.2250 / 0.5943 / 0.0637 / human / 200 / BROKE | 0.2437 / 0.5943 / 0.0637 / human / 200 / BROKE |
+| EV03 | evasion | signal two: a pasted quotation changes the shape | 0.3577 / 0.6662 / 0.3064 / unsure / 200 / HELD | 0.3598 / 0.6662 / 0.3064 / unsure / 200 / HELD |
+| EV04 | evasion | signal one: unusual words raise perplexity | 0.6218 / 0.6114 / 0.9227 / unsure / 200 / HELD | 0.5791 / 0.6114 / 0.9227 / unsure / 200 / HELD |
+| EV05 | evasion | both signals: heavy human editing pass | 0.1405 / 0.3212 / 0.0552 / human / 200 / BROKE | 0.1499 / 0.3212 / 0.0552 / human / 200 / BROKE |
+| EV06 | evasion | signal two: one very long sentence and one very short | 0.3994 / 0.5727 / 0.0655 / unsure / 200 / HELD | 0.4490 / 0.5727 / 0.0655 / unsure / 200 / HELD |
+| EV07 | evasion | signal two: padding with punctuation | 0.8313 / 0.5862 / 0.9451 / ai / 200 / HELD | 0.8182 / 0.5862 / 0.9451 / ai / 200 / HELD |
+| EV08 | evasion | signal one: text below the token window | 0.4609 / 0.2452 / 0.6678 / unsure / 200 / HELD | 0.4185 / 0.2452 / 0.6678 / unsure / 200 / HELD |
+| EV09 | evasion | both: AI text with a human opening paragraph bolted on | 0.3429 / 0.7042 / 0.2564 / human / 200 / BROKE | 0.3502 / 0.7042 / 0.2564 / unsure / 200 / HELD |
+| EV10 | evasion | signal two: repeated stanza structure | 0.6059 / 0.9792 / 0.3948 / unsure / 200 / HELD | 0.6534 / 0.9792 / 0.3948 / unsure / 200 / HELD |
+| FP01 | false_positive | plain, clear human writing with no flourishes | 0.3461 / 0.6175 / 0.2637 / human / 200 / HELD | 0.3584 / 0.6175 / 0.2637 / unsure / 200 / HELD |
+| FP02 | false_positive | human writing in a formal register | 0.7532 / 0.7387 / 0.7513 / ai / 200 / BROKE | 0.7550 / 0.7387 / 0.7513 / ai / 200 / BROKE |
+| FP03 | false_positive | a non-native English speaker writing carefully | 0.5370 / 0.8051 / 0.5596 / unsure / 200 / HELD | 0.5342 / 0.8051 / 0.5596 / unsure / 200 / HELD |
+| FP04 | false_positive | a student essay written to a rubric | 0.6164 / 0.8329 / 0.4822 / unsure / 200 / HELD | 0.6493 / 0.8329 / 0.4822 / unsure / 200 / HELD |
+| FP05 | false_positive | technical documentation written by a person | 0.7167 / 0.8005 / 0.6431 / unsure / 200 / HELD | 0.7394 / 0.8005 / 0.6431 / unsure / 200 / HELD |
+| FP06 | false_positive | a person imitating a formal template | 0.4591 / 0.8814 / 0.1280 / unsure / 200 / HELD | 0.5163 / 0.8814 / 0.1280 / unsure / 200 / HELD |
+| FP07 | false_positive | human writing that repeats a phrase deliberately | 0.4265 / 0.8816 / 0.0246 / unsure / 200 / HELD | 0.4883 / 0.8816 / 0.0246 / unsure / 200 / HELD |
+| FP08 | false_positive | very short genuine human submission | 0.2790 / 0.3223 / 0.3132 / human / 200 / HELD | 0.2654 / 0.3223 / 0.3132 / human / 200 / HELD |
+| PI01 | prompt_injection | instruction to ignore the check | 0.2663 / 0.4625 / 0.0815 / human / 200 / HELD | 0.2992 / 0.4625 / 0.0815 / human / 200 / HELD |
+| PI02 | prompt_injection | instruction disguised as a system message | 0.1074 / 0.2044 / 0.0630 / human / 200 / HELD | 0.1110 / 0.2044 / 0.0630 / human / 200 / HELD |
+| PI03 | prompt_injection | instruction wrapped in the writer's voice | 0.4563 / 0.5943 / 0.5444 / unsure / 200 / HELD | 0.4365 / 0.5943 / 0.5444 / unsure / 200 / HELD |
+| PI04 | prompt_injection | attempt to make the label text hostile | 0.3641 / 0.4998 / 0.3949 / unsure / 200 / HELD | 0.3520 / 0.4998 / 0.3949 / unsure / 200 / HELD |
+| PI05 | prompt_injection | attempt to inject into the audit log | 0.3144 / 0.6401 / 0.2268 / human / 200 / HELD | 0.3218 / 0.6401 / 0.2268 / human / 200 / HELD |
+| PI06 | prompt_injection | instruction plus real human text | 0.3443 / 0.5583 / 0.2906 / human / 200 / HELD | 0.3511 / 0.5583 / 0.2906 / unsure / 200 / HELD |
+| MF01 | malformed | text is only whitespace | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| MF02 | malformed | text is a single character | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| MF03 | malformed | text is control characters | 0.5478 / 0.0000 / 0.9500 / unsure / 200 / HELD | 0.4829 / 0.0000 / 0.9500 / unsure / 200 / HELD |
+| MF04 | malformed | text is only punctuation | 0.3352 / 0.0112 / 0.5000 / human / 200 / HELD | 0.2940 / 0.0112 / 0.5000 / human / 200 / HELD |
+| MF05 | malformed | text is a very long single word | 0.6997 / 0.9976 / 1.0000 / unsure / 200 / HELD | 0.6663 / 0.9976 / 1.0000 / unsure / 200 / HELD |
+| MF06 | malformed | text is emoji only | 0.4996 / 0.9969 / 0.5000 / unsure / 200 / HELD | 0.4995 / 0.9969 / 0.5000 / unsure / 200 / HELD |
+| MF07 | malformed | text is right-to-left script | 0.4869 / 0.9064 / 0.5000 / unsure / 200 / HELD | 0.4837 / 0.9064 / 0.5000 / unsure / 200 / HELD |
+| MF08 | malformed | text is 60,000 characters | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| RQ01 | malformed | no text field at all | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| RQ02 | malformed | no creator_id | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| RQ03 | malformed | text is a number | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| RQ04 | malformed | text is a list | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| RQ05 | malformed | text is null | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| RQ06 | malformed | creator_id is an object | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| RQ07 | malformed | body is a JSON array, not an object | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| RQ08 | malformed | body is unparseable JSON | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| RQ09 | malformed | body is empty | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| RQ10 | malformed | body is form-encoded, not JSON | — / — / — / — / 429 / HELD | - / - / - / - / 429 / HELD |
+| RQ11 | malformed | body is JSON claiming to be plain text | — / — / — / — / 429 / HELD | - / - / - / - / 429 / HELD |
+| RQ12 | malformed | deeply nested JSON | — / — / — / — / 400 / HELD | - / - / - / - / 400 / HELD |
+| FL01_01 | flood_same_creator | 20 rapid submissions from one creator | 0.5637 / 0.0287 / 0.9815 / unsure / 200 / HELD | 0.4986 / 0.0287 / 0.9815 / unsure / 200 / HELD |
+| FL01_02 | flood_same_creator | 20 rapid submissions from one creator | 0.5637 / 0.0287 / 0.9815 / unsure / 200 / HELD | 0.4986 / 0.0287 / 0.9815 / unsure / 200 / HELD |
+| FL01_03 | flood_same_creator | 20 rapid submissions from one creator | 0.5637 / 0.0287 / 0.9815 / unsure / 200 / HELD | 0.4986 / 0.0287 / 0.9815 / unsure / 200 / HELD |
+| FL01_04 | flood_same_creator | 20 rapid submissions from one creator | 0.5637 / 0.0287 / 0.9815 / unsure / 200 / HELD | 0.4986 / 0.0287 / 0.9815 / unsure / 200 / HELD |
+| FL01_05 | flood_same_creator | 20 rapid submissions from one creator | 0.5637 / 0.0287 / 0.9815 / unsure / 200 / HELD | 0.4986 / 0.0287 / 0.9815 / unsure / 200 / HELD |
+| FL01_06 | flood_same_creator | 20 rapid submissions from one creator | — / — / — / — / 429 / HELD | - / - / - / - / 429 / HELD |
+| FL01_07 | flood_same_creator | 20 rapid submissions from one creator | — / — / — / — / 429 / HELD | - / - / - / - / 429 / HELD |
+| FL01_08 | flood_same_creator | 20 rapid submissions from one creator | — / — / — / — / 429 / HELD | - / - / - / - / 429 / HELD |
+| FL01_09 | flood_same_creator | 20 rapid submissions from one creator | — / — / — / — / 429 / HELD | - / - / - / - / 429 / HELD |
+| FL01_10 | flood_same_creator | 20 rapid submissions from one creator | — / — / — / — / 429 / HELD | - / - / - / - / 429 / HELD |
+| FL01_11 | flood_same_creator | 20 rapid submissions from one creator | — / — / — / — / 429 / HELD | - / - / - / - / 429 / HELD |
+| FL01_12 | flood_same_creator | 20 rapid submissions from one creator | — / — / — / — / 429 / HELD | - / - / - / - / 429 / HELD |
+
+Label changes: EV09, FP01 and PI06 moved from human to unsure; no attack moved the other way. The change helped EV09 and did not change EV02, EV05 or FP02. FP01 is plain human writing that now gets "unsure", which is a cost to a real writer. The prompt-injection rows have no clean control, so PI06's change is not interpretable.
+
+**After per-family counts:**
+
+- evasion: HELD 8, BROKE 2
+- false_positive: HELD 7, BROKE 1
+- prompt_injection: HELD 6, BROKE 0
+- malformed: HELD 20, BROKE 0
+- flood_same_creator: HELD 12, BROKE 0
 
 **Overall:** The change helped EV09 (human to unsure) but did not change EV02, EV05 or FP02. It moved FP01 (plain human writing) from human to unsure, narrowed the AI-human gap from 0.2104 to 0.1685, and left no ai label in the criterion 3 fixtures.
 
