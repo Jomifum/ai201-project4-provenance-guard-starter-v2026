@@ -1,80 +1,99 @@
 """
 What your test runs. ← UNIT 8, MILESTONE 3
 
-Each of your five criteria needs something run against it. A criterion about
-false positives needs your own writing. One about label coverage needs inputs
-across the score range. One about the appeal path needs a real content_id.
-
-Working that out is Milestone 3's first step, and this file is where you write
-it down. `run_eval.py` runs everything here three times.
-
-Two are filled in as examples. Replace them with what your criteria actually
-need — these are a shape, not a set.
-
-A scenario carries **either** of these:
-
-    "texts"   a list of strings. Each is sent as {"text": ..., "creator_id": ...}
-              with a creator_id made up for you. Use this for most criteria.
-
-    "bodies"  a list of whole request bodies, sent exactly as written. Use this
-              when the malformed request IS the point — empty text, no `text`
-              field at all, something enormous. A bad-input criterion needs it,
-              because you cannot express "the field is missing" as a string.
+Each of your five criteria needs something run against it. Criterion 1 is left
+for your own writing; until you add those ten texts, the evaluator skips only
+that scenario and runs the other four.
 """
+
+import json
+from pathlib import Path
+
+
+_TEXTS_PATH = Path(__file__).parent / "test_set" / "texts.json"
+_FIXTURES = json.loads(_TEXTS_PATH.read_text(encoding="utf-8"))
+_TEXT_BY_ID = {item["id"]: item["text"] for item in _FIXTURES}
+
+
+def _texts_for(ids: list[str]) -> list[str]:
+    missing = [fixture_id for fixture_id in ids if fixture_id not in _TEXT_BY_ID]
+    if missing:
+        raise ValueError(f"Missing text fixture IDs: {', '.join(missing)}")
+    return [_TEXT_BY_ID[fixture_id] for fixture_id in ids]
+
+
+_AI_IDS = [f"ai_{i:02}" for i in range(1, 6)]
+_HUMAN_IDS = [
+    "human_01", "human_02", "human_03", "human_04", "human_05_formal",
+]
+_BORDERLINE_IDS = [f"borderline_{i:02}" for i in range(1, 6)]
+_ALL_IDS = _AI_IDS + _HUMAN_IDS + _BORDERLINE_IDS
 
 SCENARIOS = [
     {
         "name": "my own writing",
         "criterion": 1,
-        # ⚠️ PUT YOUR OWN WRITING HERE. Not AI text, not a sample from the web —
-        # things you actually wrote. This is the criterion that matters most and
-        # it's meaningless with someone else's prose.
+        "needs_user_input": True,
+        "required_text_count": 10,
+        # Add ten pieces you wrote yourself here. This scenario is skipped
+        # until all ten are supplied; no sample text is generated for you.
         "texts": [
-            "REPLACE ME with a paragraph you wrote yourself.",
-            "REPLACE ME with another one. Ten pieces is the usual number.",
+            None,  # YOUR OWN WRITING 1 OF 10
+            None,  # YOUR OWN WRITING 2 OF 10
+            None,  # YOUR OWN WRITING 3 OF 10
+            None,  # YOUR OWN WRITING 4 OF 10
+            None,  # YOUR OWN WRITING 5 OF 10
+            None,  # YOUR OWN WRITING 6 OF 10
+            None,  # YOUR OWN WRITING 7 OF 10
+            None,  # YOUR OWN WRITING 8 OF 10
+            None,  # YOUR OWN WRITING 9 OF 10
+            None,  # YOUR OWN WRITING 10 OF 10
         ],
     },
     {
-        "name": "label coverage",
+        "name": "score spread",
         "criterion": 2,
-        # Inputs spread across your score range, so you can check all three
-        # labels are actually reachable.
-        "texts": [
-            "REPLACE ME with something you're confident is AI-generated.",
-            "REPLACE ME with something you're confident is human-written.",
-            "REPLACE ME with something genuinely borderline.",
+        "fixture_ids": _AI_IDS + _HUMAN_IDS,
+        "texts": _texts_for(_AI_IDS + _HUMAN_IDS),
+    },
+    {
+        "name": "label coverage",
+        "criterion": 3,
+        "fixture_ids": _ALL_IDS,
+        "texts": _texts_for(_ALL_IDS),
+        "include_label_ranges": True,
+    },
+    {
+        "name": "borderline text",
+        "criterion": 4,
+        "fixture_ids": _BORDERLINE_IDS,
+        "texts": _texts_for(_BORDERLINE_IDS),
+    },
+    {
+        "name": "appeals and bad input",
+        "criterion": 5,
+        "fixture_ids": _AI_IDS + _HUMAN_IDS,
+        "texts": _texts_for(_AI_IDS + _HUMAN_IDS),
+        "appeal_after_submit": True,
+        "unknown_appeal": {
+            "content_id": "unknown-criteria-id",
+            "reasoning": "I wrote this text myself.",
+        },
+        "bad_bodies": [
+            {"creator_id": "eval_missing_text"},
+            {"text": "", "creator_id": "eval_empty_text"},
+            {"text": "x" * 10_001, "creator_id": "eval_overlength_text"},
         ],
     },
-    # A bad-input criterion looks like this. Uncomment and adjust if that's one
-    # of your five — these are raw request bodies, sent exactly as written.
-    #
-    # {
-    #     "name": "bad input",
-    #     "criterion": 3,
-    #     "bodies": [
-    #         {"text": "", "creator_id": "eval_bad_empty"},
-    #         {"creator_id": "eval_bad_missing"},          # no text field at all
-    #         {"text": "word " * 50000, "creator_id": "eval_bad_huge"},
-    #         {"text": None, "creator_id": "eval_bad_null"},
-    #     ],
-    # },
-
-    # TODO: add what your remaining criteria need.
-    #
-    # A criterion about the appeal path can't be tested by sending text alone;
-    # it needs a submission first and then an appeal against the content_id
-    # that came back. You'll need to test that one by hand, or extend this file
-    # and run_eval.py to do it. Saying which you did is part of the write-up.
 ]
 
 
 def validate() -> list[str]:
     """
-    Complain about anything malformed, before a long run rather than during.
+    Complain about malformed scenarios before a long run.
 
-    A "bodies" scenario is deliberately exempt from the empty check — an empty
-    string is the whole point of a bad-input case, and refusing to run one
-    would make that criterion untestable.
+    The criterion 1 placeholder is valid only as an explicitly skipped
+    scenario; it becomes runnable after ten own-written texts are supplied.
     """
     problems = []
     for i, scenario in enumerate(SCENARIOS, 1):
@@ -83,6 +102,9 @@ def validate() -> list[str]:
 
         texts = scenario.get("texts")
         bodies = scenario.get("bodies")
+
+        if scenario.get("needs_user_input"):
+            continue
 
         if texts and bodies:
             problems.append(
@@ -96,7 +118,7 @@ def validate() -> list[str]:
                 if not isinstance(body, dict):
                     problems.append(
                         f"scenario {i}, body {j} is not a dict — bodies are whole "
-                        f"request bodies, like {{'text': '', 'creator_id': 'x'}}"
+                        f"request bodies"
                     )
             continue
 
@@ -105,14 +127,8 @@ def validate() -> list[str]:
             continue
 
         for j, text in enumerate(texts, 1):
-            if not str(text).strip():
+            if not isinstance(text, str) or not text.strip():
                 problems.append(
-                    f"scenario {i}, text {j} is empty — if an empty submission is what "
-                    f"you're testing, use 'bodies' instead of 'texts'"
-                )
-            elif str(text).startswith("REPLACE ME"):
-                problems.append(
-                    f"scenario {i} ('{scenario.get('name')}'), text {j} is still "
-                    f"the placeholder"
+                    f"scenario {i}, text {j} is empty"
                 )
     return problems

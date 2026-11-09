@@ -42,18 +42,22 @@ for _stream in (sys.stdout, sys.stderr):
 DEFAULT_URL = f"http://{config.HOST}:{config.PORT}"
 
 
-def bodies_for(scenario):
+def bodies_for(scenario, trial_number: int):
     """
     The request bodies one scenario sends.
 
-    A "texts" scenario gets a creator_id made up for it. A "bodies" scenario is
-    sent exactly as written, which is how a bad-input criterion says things a
-    string can't — no `text` field, a null, something enormous.
+    Every text submission gets its own creator_id for each trial, keeping it
+    below the per-creator limiter while preserving repeated trials.
     """
     if scenario.get("bodies"):
         return list(scenario["bodies"])
     return [
-        {"text": text, "creator_id": f"eval_{scenario['name'][:12]}_{i}"}
+        {
+            "text": text,
+            "creator_id": (
+                f"eval_c{scenario['criterion']}_t{trial_number}_{i}"
+            ),
+        }
         for i, text in enumerate(scenario["texts"], 1)
     ]
 
@@ -64,6 +68,59 @@ def describe(body):
         text = body["text"]
         return text[:70] if text else "(empty text)"
     return json.dumps(body)[:120]
+
+
+def request_json(requests, method, url, timeout, body=None):
+    """Make one JSON request and preserve an HTTP status even if JSON parsing fails."""
+    try:
+        response = requests.request(
+            method,
+            url,
+            json=body,
+            timeout=timeout,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": None,
+            "payload": {},
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    try:
+        payload = response.json() if response.content else {}
+    except ValueError as exc:
+        return {
+            "status": response.status_code,
+            "payload": {},
+            "error": f"{type(exc).__name__}: {exc}",
+            "response_text": response.text[:200],
+        }
+
+    return {
+        "status": response.status_code,
+        "payload": payload if isinstance(payload, dict) else {},
+        "error": None,
+    }
+
+
+def result_for(response, body, kind, fixture_id=None):
+    payload = response["payload"]
+    result = {
+        "kind": kind,
+        "fixture_id": fixture_id,
+        "status": response["status"],
+        "guess": payload.get("guess"),
+        "confidence": payload.get("confidence"),
+        "model_score": payload.get("model_score"),
+        "style_score": payload.get("style_score"),
+        "label": payload.get("label"),
+        "sent": describe(body),
+    }
+    if response["error"]:
+        result["error"] = response["error"]
+        if response.get("response_text"):
+            result["response_text"] = response["response_text"]
+    return result
 
 
 def main():
@@ -110,30 +167,116 @@ def main():
     for scenario in scenarios.SCENARIOS:
         print(f"\n{scenario['name']}  (criterion {scenario.get('criterion') or '—'})")
 
+        if (
+            scenario.get("needs_user_input")
+            and (
+                len(scenario.get("texts", []))
+                != scenario.get("required_text_count", 0)
+                or any(
+                    not isinstance(text, str) or not text.strip()
+                    for text in scenario.get("texts", [])
+                )
+            )
+        ):
+            print(
+                f"  not run: add {scenario['required_text_count']} "
+                "pieces of your own writing"
+            )
+            rows.append({"scenario": scenario, "trials": []})
+            continue
+
         trials = []
         for trial in range(1, args.trials + 1):
             results = []
-            for i, body in enumerate(bodies_for(scenario), 1):
+            fixture_ids = scenario.get("fixture_ids", [])
+            for i, body in enumerate(bodies_for(scenario, trial), 1):
                 preview = describe(body)
-                try:
-                    response = requests.post(f"{args.url}/submit", json=body,
-                                             timeout=args.timeout)
-                    payload = response.json() if response.content else {}
-                    results.append({
-                        "status": response.status_code,
-                        "guess": payload.get("guess"),
-                        "confidence": payload.get("confidence"),
-                        "model_score": payload.get("model_score"),
-                        "style_score": payload.get("style_score"),
-                        "label": payload.get("label"),
-                        "sent": preview,
-                    })
-                except Exception as exc:  # noqa: BLE001
-                    results.append({"status": None, "error": f"{type(exc).__name__}: {exc}",
-                                    "sent": preview})
+                response = request_json(
+                    requests, "POST", f"{args.url}/submit", args.timeout, body
+                )
+                result = result_for(
+                    response,
+                    body,
+                    "submission",
+                    fixture_ids[i - 1] if i <= len(fixture_ids) else None,
+                )
+
+                if (
+                    scenario.get("appeal_after_submit")
+                    and response["status"] == 200
+                    and response["payload"].get("content_id")
+                ):
+                    content_id = response["payload"]["content_id"]
+                    appeal_body = {
+                        "content_id": content_id,
+                        "reasoning": "I wrote this text myself.",
+                    }
+                    appeal = request_json(
+                        requests,
+                        "POST",
+                        f"{args.url}/appeal",
+                        args.timeout,
+                        appeal_body,
+                    )
+                    current = request_json(
+                        requests,
+                        "GET",
+                        f"{args.url}/content/{content_id}",
+                        args.timeout,
+                    )
+                    result["appeal"] = {
+                        "status": appeal["status"],
+                        "body": appeal["payload"],
+                        "error": appeal["error"],
+                    }
+                    result["current_status"] = current["payload"].get("status")
+
+                results.append(result)
+
+            for i, body in enumerate(scenario.get("bad_bodies", []), 1):
+                response = request_json(
+                    requests, "POST", f"{args.url}/submit", args.timeout, body
+                )
+                results.append(result_for(response, body, "bad_input"))
+
+            if scenario.get("unknown_appeal"):
+                before = request_json(
+                    requests, "GET", f"{args.url}/log", args.timeout
+                )
+                appeal_body = scenario["unknown_appeal"]
+                appeal = request_json(
+                    requests,
+                    "POST",
+                    f"{args.url}/appeal",
+                    args.timeout,
+                    appeal_body,
+                )
+                after = request_json(
+                    requests, "GET", f"{args.url}/log", args.timeout
+                )
+                results.append({
+                    "kind": "unknown_appeal",
+                    "status": appeal["status"],
+                    "body": appeal["payload"],
+                    "error": appeal["error"],
+                    "audit_count_before": before["payload"].get("count"),
+                    "audit_count_after": after["payload"].get("count"),
+                })
+
+            if scenario.get("include_label_ranges"):
+                import scoring
+
+                results.append({
+                    "kind": "label_ranges",
+                    "ranges": scoring.label_ranges(),
+                })
 
             trials.append(results)
-            guesses = [r.get("guess") or "—" for r in results]
+            guesses = [
+                r.get("guess") or "—"
+                for r in results
+                if r.get("kind") == "submission"
+            ]
             print(f"  trial {trial}: {', '.join(guesses)}")
 
         rows.append({"scenario": scenario, "trials": trials})
@@ -178,6 +321,12 @@ def write_report(rows, args):
     for row in rows:
         scenario = row["scenario"]
         lines += [f"### {scenario['name']}", ""]
+        if not row["trials"]:
+            lines += [
+                f"Not run: add {scenario['required_text_count']} pieces of your "
+                "own writing to `scenarios.py`.",
+                "",
+            ]
         for trial_number, results in enumerate(row["trials"], 1):
             lines += [f"**Trial {trial_number}**", "", "```json",
                       json.dumps(results, indent=2), "```", ""]
