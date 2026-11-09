@@ -156,14 +156,12 @@ one signal. Then log it.
 
 ## Turning on rate limiting (unit 8)
 
-Rate limiting is enabled on `POST /submit`. Its on/off setting and limits are
-in `config.py`; the decorator is in `app.py`.
+Three steps:
 
-The starter is configured for **5 submissions per minute and 50 per day per
-creator ID**. This gives a writer room for occasional corrections and bursts,
-while limiting how quickly one creator can probe the scoring thresholds. It
-does not stop someone from rotating creator IDs, and the in-memory counters
-reset when the service restarts.
+1. In `config.py`, set `RATE_LIMITING_ENABLED = True` — or run with
+   `AI201_RATE_LIMITS=1`.
+2. Choose your numbers there.
+3. In `app.py`, uncomment the `@limiter.limit(...)` line above `submit`.
 
 Then push past your limit and watch for `429`:
 
@@ -175,25 +173,16 @@ That sends 15 submissions from one `creator_id` and prints the run of status
 codes — `200 200 200 ... 429 429` — which is exactly what your README's **Rate
 Limiting** section asks you to paste. It also writes `results/flood_<date>.md`.
 
-In Windows PowerShell, run the flood and then read the latest audit entries
-with these one-line commands:
-
-```powershell
-python run_attacks.py --flood 15
-curl.exe "http://127.0.0.1:5000/log?limit=200"
-```
-
 The attack set can't do this for you. Every attack row submits under its own
 `creator_id`, so a full attack run looks like forty-odd different callers and
 never trips a limit however long it is.
 
-No `429` at all? Check that `/health` reports rate limiting on and that there
-were not already 15 requests from that creator during the current minute.
+No `429` at all? Either your limit is above 15 a minute, or rate limiting is
+still off. `GET /health` reports which.
 
-Rate-limited requests and invalid requests refused by the routes are logged
-with a rejection reason. **An attack that shows up only as an absence is one
-you'll never find** — a thousand requests that got a `429` and left no trace
-look exactly like a quiet afternoon.
+Rejections are logged for you. **An attack that shows up only as an absence is
+one you'll never find** — a thousand requests that got a `429` and left no
+trace look exactly like a quiet afternoon.
 
 ---
 
