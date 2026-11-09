@@ -36,16 +36,18 @@ import config
 app = Flask(__name__)
 
 
+def _log_route_rejection(payload, reason: str, **extra) -> None:
+    creator_id = payload.get("creator_id") if isinstance(payload, dict) else None
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        creator_id = "unknown"
+    else:
+        creator_id = creator_id.strip()
+    audit.log_rejection(creator_id=creator_id, reason=reason, **extra)
+
+
 # ── Rate limiting — UNIT 8 ────────────────────────────────────────────────────
-# Off until you turn it on. In unit 8, Milestone 1:
-#
-#   1. Set RATE_LIMITING_ENABLED = True in config.py (or AI201_RATE_LIMITS=1)
-#   2. Choose your numbers there
-#   3. Uncomment the @limiter.limit(...) line on /submit below
-#
-# The order doesn't matter. While limiting is off, that decorator is a no-op
-# that quietly does nothing, so uncommenting it early costs you nothing — but
-# it also means no 429 until you've done step 1.
+# Enabled for unit 8. The limits are configured in config.py and applied to
+# /submit below.
 #
 # The storage backend is preconfigured, which stops Flask-Limiter printing a
 # warning on every start. In-memory is right for one laptop and wrong for
@@ -105,10 +107,8 @@ if config.RATE_LIMITING_ENABLED:
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             payload = {}
-        audit.log_rejection(
-            creator_id=payload.get("creator_id", "unknown"),
-            reason="rate_limited",
-            limit=str(exc.description),
+        _log_route_rejection(
+            payload, "rate_limited", limit=str(exc.description)
         )
         return jsonify({
             "error": "rate_limited",
@@ -153,7 +153,7 @@ def health():
 # ── YOU BUILD THIS ────────────────────────────────────────────────────────────
 
 @app.post("/submit")
-# @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
+@limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
 def submit():
     """
     Score a text with all signals, log the decision, and return the result.
@@ -173,6 +173,7 @@ def submit():
 
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
+        _log_route_rejection(payload, "invalid_request_body")
         return jsonify({
             "error": "invalid_request",
             "message": "Request body must be a JSON object.",
@@ -181,16 +182,19 @@ def submit():
     text = payload.get("text")
     creator_id = payload.get("creator_id")
     if not isinstance(text, str) or not text.strip():
+        _log_route_rejection(payload, "missing_or_empty_text")
         return jsonify({
             "error": "invalid_request",
             "message": "'text' must be a non-empty string.",
         }), 400
     if not isinstance(creator_id, str) or not creator_id.strip():
+        _log_route_rejection(payload, "missing_or_empty_creator_id")
         return jsonify({
             "error": "invalid_request",
             "message": "'creator_id' must be a non-empty string.",
         }), 400
     if len(text) > 10_000:
+        _log_route_rejection(payload, "text_too_long")
         return jsonify({
             "error": "invalid_request",
             "message": "'text' must not exceed 10,000 characters.",
@@ -199,11 +203,13 @@ def submit():
     try:
         model_score = detector.model_signal(text)
     except ValueError as exc:
+        _log_route_rejection(payload, "invalid_text")
         return jsonify({
             "error": "invalid_request",
             "message": str(exc),
         }), 400
     except detector.DetectorUnavailable as exc:
+        _log_route_rejection(payload, "detector_unavailable")
         return jsonify({
             "error": "detector_unavailable",
             "message": str(exc),
@@ -253,6 +259,7 @@ def appeal():
     """
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
+        _log_route_rejection(payload, "invalid_request_body")
         return jsonify({
             "error": "invalid_request",
             "message": "Request body must be a JSON object.",
@@ -261,11 +268,13 @@ def appeal():
     content_id = payload.get("content_id")
     reasoning = payload.get("reasoning")
     if not isinstance(reasoning, str) or not reasoning.strip():
+        _log_route_rejection(payload, "missing_or_empty_reasoning")
         return jsonify({
             "error": "invalid_request",
             "message": "'reasoning' must be a non-empty string.",
         }), 400
     if not isinstance(content_id, str) or not content_id.strip():
+        _log_route_rejection(payload, "missing_content_id")
         return jsonify({
             "error": "not_found",
             "message": "No submission exists for that content_id.",
@@ -279,6 +288,11 @@ def appeal():
         and isinstance(entry.get("creator_id"), str)
     ]
     if not decisions:
+        _log_route_rejection(
+            payload,
+            "content_not_found",
+            content_id=content_id.strip(),
+        )
         return jsonify({
             "error": "not_found",
             "message": "No submission exists for that content_id.",
@@ -303,6 +317,11 @@ def get_content(content_id: str):
         and isinstance(entry.get("creator_id"), str)
     ]
     if not decisions:
+        _log_route_rejection(
+            None,
+            "content_not_found",
+            content_id=content_id,
+        )
         return jsonify({
             "error": "not_found",
             "message": "No submission exists for that content_id.",
@@ -337,6 +356,7 @@ def verify_creator():
 
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
+        _log_route_rejection(payload, "invalid_request_body")
         return jsonify({
             "error": "invalid_request",
             "message": "Request body must be a JSON object.",
@@ -346,18 +366,21 @@ def verify_creator():
     creator_id = payload.get("creator_id")
     writing_sample = payload.get("writing_sample")
     if not isinstance(creator_id, str) or not creator_id.strip():
+        _log_route_rejection(payload, "missing_or_empty_creator_id")
         return jsonify({
             "error": "invalid_request",
             "message": "'creator_id' must be a non-empty string.",
             "prompt": config.VERIFICATION_PROMPT,
         }), 400
     if not isinstance(writing_sample, str) or not writing_sample.strip():
+        _log_route_rejection(payload, "missing_or_empty_writing_sample")
         return jsonify({
             "error": "invalid_request",
             "message": "'writing_sample' must be a non-empty string.",
             "prompt": config.VERIFICATION_PROMPT,
         }), 400
     if len(writing_sample) > 10_000:
+        _log_route_rejection(payload, "writing_sample_too_long")
         return jsonify({
             "error": "invalid_request",
             "message": "'writing_sample' must not exceed 10,000 characters.",
@@ -366,6 +389,7 @@ def verify_creator():
 
     word_count = len(stylometry.words(writing_sample))
     if word_count < 100:
+        _log_route_rejection(payload, "writing_sample_too_short")
         return jsonify({
             "error": "invalid_request",
             "message": "The prompted writing sample must contain at least 100 words.",
